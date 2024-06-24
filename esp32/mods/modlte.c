@@ -223,7 +223,18 @@ static bool lte_push_at_command_ext_cont (char *cmd_str, uint32_t timeout, const
 }
 
 static bool lte_push_at_command_ext(char *cmd_str, uint32_t timeout, const char *expected_rsp, size_t len) {
-    return lte_push_at_command_ext_cont(cmd_str, timeout, expected_rsp, len, false);
+    if (len > LTE_AT_CMD_DATA_SIZE_MAX) {
+        uint32_t cmd_full = len / LTE_AT_CMD_DATA_SIZE_MAX;
+        uint32_t cmd_remain = len % LTE_AT_CMD_DATA_SIZE_MAX;
+        for (int i=0; i < cmd_full; i++) {
+            if (!lte_push_at_command_ext_cont(cmd_str+(i*LTE_AT_CMD_DATA_SIZE_MAX), timeout, expected_rsp, LTE_AT_CMD_DATA_SIZE_MAX, true)) {
+                return false;
+            }
+        }
+        return lte_push_at_command_ext_cont(cmd_str+(cmd_full*LTE_AT_CMD_DATA_SIZE_MAX), timeout, expected_rsp, cmd_remain, false);
+    } else {
+        return lte_push_at_command_ext_cont(cmd_str, timeout, expected_rsp, len, false);
+    }
 }
 
 static bool lte_push_at_command (char *cmd_str, uint32_t timeout) {
@@ -280,8 +291,7 @@ static bool lte_check_attached(bool legacy) {
                     mp_hal_delay_ms(LTE_RX_TIMEOUT_MIN_MS);
                     lte_push_at_command("AT+CEREG?", LTE_RX_TIMEOUT_MIN_MS);
                 }
-                if (((pos = strstr(modlte_rsp.data, "+CEREG: 1,1")) || (pos = strstr(modlte_rsp.data, "+CEREG: 1,5")))
-                        && (strlen(pos) >= 31) && (pos[30] == '7' || pos[30] == '9')) {
+                if ((pos = strstr(modlte_rsp.data, "+CEREG: 1,1")) || (pos = strstr(modlte_rsp.data, "+CEREG: 1,5"))) {
                     attached = true;
                 }
             } else {
@@ -1524,7 +1534,7 @@ STATIC mp_obj_t lte_debug_buff(void) {
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(lte_debug_buff_obj, lte_debug_buff);
 #endif
 STATIC mp_obj_t lte_reconnect_uart (void) {
-    connect_lte_uart();
+    connect_lte_uart(true);
     lteppp_disconnect();
     lte_obj.init = false;
     return mp_const_none;
